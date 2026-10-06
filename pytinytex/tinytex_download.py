@@ -10,6 +10,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+import certifi
 import requests
 
 logger = logging.getLogger("pytinytex")
@@ -33,7 +34,9 @@ def _is_musl():
 def _http_get(url, stream=False):
     """GET *url* with certifi-backed TLS (via requests)."""
     timeout = _DOWNLOAD_TIMEOUT if stream else _HTTP_TIMEOUT
-    response = requests.get(url, timeout=timeout, stream=stream)
+    response = requests.get(
+        url, timeout=timeout, stream=stream, verify=certifi.where()
+    )
     response.raise_for_status()
     return response
 
