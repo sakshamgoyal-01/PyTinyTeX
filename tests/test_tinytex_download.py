@@ -1,6 +1,7 @@
 import os
 
 import pytest
+import requests
 
 import pytinytex
 from .utils import TINYTEX_DISTRIBUTION, cleanup
@@ -198,3 +199,49 @@ def test_select_urls_old_naming():
 def test_failing_download_variation_2_with_pinned_version():
     with pytest.raises(RuntimeError, match="only available with version='daily'"):
         pytinytex.download_tinytex(variation=2, version="2024.12")
+
+
+def test_http_get_uses_requests(monkeypatch):
+    calls = []
+
+    class _Response:
+        url = "https://github.com/rstudio/tinytex-releases/releases/tag/v2026.03"
+        content = b""
+        headers = {"Content-Length": "4"}
+
+        def raise_for_status(self):
+            return None
+
+        def iter_content(self, chunk_size=8192):
+            yield b"data"
+
+    def fake_get(url, timeout=None, stream=False):
+        calls.append({"url": url, "timeout": timeout, "stream": stream})
+        return _Response()
+
+    monkeypatch.setattr(pytinytex.tinytex_download.requests, "get", fake_get)
+    response = pytinytex.tinytex_download._http_get("https://example.test/asset")
+    assert response.content == b""
+    assert calls == [
+        {
+            "url": "https://example.test/asset",
+            "timeout": pytinytex.tinytex_download._HTTP_TIMEOUT,
+            "stream": False,
+        }
+    ]
+    pytinytex.tinytex_download._http_get("https://example.test/asset", stream=True)
+    assert calls[-1]["stream"] is True
+    assert calls[-1]["timeout"] == pytinytex.tinytex_download._DOWNLOAD_TIMEOUT
+
+
+def test_missing_release_raises_runtime_error(monkeypatch):
+    def fake_get(url, timeout=None, stream=False):
+        response = requests.models.Response()
+        response.status_code = 404
+        response.reason = "Not Found"
+        response.url = url
+        return response
+
+    monkeypatch.setattr(pytinytex.tinytex_download.requests, "get", fake_get)
+    with pytest.raises(RuntimeError, match="Can't find TinyTeX version"):
+        pytinytex.tinytex_download._get_tinytex_urls("v1999.01", 1)
